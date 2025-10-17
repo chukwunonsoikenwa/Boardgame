@@ -1,21 +1,27 @@
 name: Build and publish Docker image to ECR
 
 on:
-  push:   # runs on every git push (all branches and tags)
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'  # optional: run on version tags
 
 concurrency:
   group: build-and-push-ecr
   cancel-in-progress: true
- 
+
 jobs:
   build-and-push:
-    name: Build and push Docker image to ECR
+    name: Build and Push Docker Image to ECR
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2️⃣ Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -23,78 +29,69 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # 3️⃣ Login to ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
+      # 4️⃣ Set up Docker Buildx
       - name: Set up QEMU and Buildx (for multi-arch builds)
         uses: docker/setup-buildx-action@v2
 
-      - name: Build, tag and push image to ECR
+      # 5️⃣ Build and push image to ECR
+      - name: Build, tag, and push image to ECR
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          ECR_REPOSITORY: boardgame   # change if your ECR repo name is different
+          ECR_REPOSITORY: boardgame        # ✅ Change this if needed
           IMAGE_TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          # Resolve AWS account id: prefer provided secret, fall back to STS
+          echo "🔹 Starting ECR build and push pipeline..."
+
+          # Resolve AWS Account ID if not provided
           if [ -z "${AWS_ACCOUNT_ID:-}" ] || [ "${AWS_ACCOUNT_ID}" = "null" ]; then
-            echo "AWS_ACCOUNT_ID secret is empty or not provided; attempting to query via STS..."
-            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text) || {
-              echo "ERROR: Cannot determine AWS account id from secrets or STS. Set secret AWS_ACCOUNT_ID or ensure AWS credentials can call sts:GetCallerIdentity." >&2
-              exit 1
-            }
-            echo "Resolved AWS account id: ${AWS_ACCOUNT_ID}"
+            echo "⚠️ AWS_ACCOUNT_ID secret not set — attempting to retrieve via STS..."
+            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           fi
+          echo "✅ Using AWS Account ID: ${AWS_ACCOUNT_ID}"
 
-          # Compute ECR registry and validate
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          if [[ -z "${ECR_REGISTRY//./}" ]]; then
-            echo "ERROR: Computed ECR_REGISTRY is empty or invalid: '${ECR_REGISTRY}'" >&2
-            exit 1
-          fi
+          echo "✅ Using ECR registry: ${ECR_REGISTRY}"
+          echo "✅ Using repository: ${ECR_REPOSITORY}"
 
-          echo "Using ECR registry: ${ECR_REGISTRY} and repository: ${ECR_REPOSITORY}"
-
-          # Create ECR repository if it doesn't already exist
+          # Create repository if missing
           if ! aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" >/dev/null 2>&1; then
-            echo "ECR repository ${ECR_REPOSITORY} not found — creating..."
+            echo "📦 Repository ${ECR_REPOSITORY} not found — creating..."
             aws ecr create-repository --repository-name "${ECR_REPOSITORY}" >/dev/null
-          else
-            echo "ECR repository ${ECR_REPOSITORY} exists"
           fi
 
-          # Ensure buildx builder exists
-          docker buildx inspect builder >/dev/null 2>&1 || docker buildx create --name builder --use
-
-          # Build and push multi-arch image (amd64 + arm64) to ECR with registry cache
-          CACHE_REF="${ECR_REGISTRY}/${ECR_REPOSITORY}:buildcache"
+          # Build and push Docker image
+          echo "🚀 Building Docker image..."
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --tag "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}" \
-            --tag "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest" \
-            --cache-from type=registry,ref=${CACHE_REF} \
-            --cache-to type=registry,ref=${CACHE_REF},mode=max \
+            --platform linux/amd64 \
+            -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} \
+            -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest \
             --push .
 
-      - name: Scan pushed image with Trivy (warn on HIGH/CRITICAL)
-        continue-on-error: true
-        env:
-          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          ECR_REPOSITORY: boardgame
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          # Authenticate docker client to ECR so Trivy can pull the image
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+          echo "✅ Image pushed to ECR: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-          # Scan the pushed image for HIGH and CRITICAL vulnerabilities and do NOT fail the job (only warn)
-          docker run --rm aquasec/trivy:0.43.1 image --format table --severity HIGH,CRITICAL ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} || echo "Trivy detected HIGH/CRITICAL vulnerabilities (warning only)."
-
-      - name: Output pushed image
+      # 6️⃣ Run vulnerability scan (warning only)
+      - name: Scan image for vulnerabilities (Trivy)
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          GITHUB_SHA: ${{ github.sha }}
+          ECR_REPOSITORY: boardgame
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "Pushed image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/boardgame:${GITHUB_SHA}"
+          set +e  # do not fail on non-zero exit
+          ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+          echo "🔍 Running Trivy vulnerability scan (HIGH, CRITICAL only)..."
+          docker run --rm aquasec/trivy:0.43.1 image \
+            --format table \
+            --severity HIGH,CRITICAL \
+            ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} || \
+            echo "⚠️ Trivy detected HIGH/CRITICAL vulnerabilities (warning only, build will continue)."
+
+          echo "✅ Trivy scan complete — warnings (if any) were logged, but build succeeded."

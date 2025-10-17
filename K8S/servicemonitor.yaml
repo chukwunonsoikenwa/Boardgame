@@ -7,7 +7,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: nonso-test     # must match your Service label
+      app: boardgame     # must match your Service label
   namespaceSelector:
     matchNames:
       - default           # where your app is deployed

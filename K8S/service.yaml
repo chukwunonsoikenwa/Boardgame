@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: nonso-test
+  name: boardgame
   labels:
-    app: nonso-test
+    app: boardgame
 spec:
   type: LoadBalancer
   selector:
-    app: nonso-test
+    app: boardgame
   ports:
     - protocol: TCP
       port: 80        # external service port

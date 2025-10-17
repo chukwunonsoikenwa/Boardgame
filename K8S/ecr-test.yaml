@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nonso-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: boardgame
+  template:
+    metadata:
+      labels:
+        app: boardgame
+    spec:
+      containers:
+      - name: boardgame
+        image: 336795435173.dkr.ecr.ca-central-1.amazonaws.com/boardgame:latest
+        ports:
+        - containerPort: 80

@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: App-Monitoring
+  name: nonso-test
+  labels:
+    app: nonso-test
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nonso-test
+  template:
+    metadata:
+      labels:
+        app: nonso-test
+    spec:
+      containers:
+      - name: nonso-test
+        image: 336795435173.dkr.ecr.ca-central-1.amazonaws.com/boardgame:4cbdc778a477431e33b67f332c670ff36bdaa936
+        ports:
+        - containerPort: 80
+# metadata:
+#   labels:
+#     app: nonso-test
+#   annotations:
+#     prometheus.io/scrape: "true"
+#     prometheus.io/port: "9090"
+#     prometheus.io/path: "/metrics"

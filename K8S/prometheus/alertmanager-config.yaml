@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alertmanager
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/instance: prometheus
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/version: v0.28.1
+    helm.sh/chart: alertmanager-1.27.0
+  annotations:
+    meta.helm.sh/release-name: prometheus
+    meta.helm.sh/release-namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: 'smtp.gmail.com:587'
+      smtp_from: 'cikenwa@empoweredfutures.ca'
+      smtp_auth_username: 'cikenwa@empoweredfutures.ca'
+      smtp_auth_password_file: '/etc/alertmanager/smtp/smtp_password'  # <- read from secret file
+      smtp_require_tls: true
+
+    route:
+      receiver: 'email-alert'
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+
+    receivers:
+      - name: 'email-alert'
+        email_configs:
+          - to: 'cikenwa@empoweredfutures.ca'
+            send_resolved: true
+
+    templates:
+      - /etc/alertmanager/*.tmpl

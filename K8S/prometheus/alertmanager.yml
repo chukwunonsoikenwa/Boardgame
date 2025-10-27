@@ -1,0 +1,23 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'cikenwa@empoweredfutures.ca'
+  smtp_auth_username: 'cikenwa@empoweredfutures.ca'
+  smtp_auth_password_file: '/etc/alertmanager/smtp/smtp_password'
+  smtp_require_tls: true
+
+route:
+  receiver: 'email-alert'
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+
+receivers:
+  - name: 'email-alert'
+    email_configs:
+      - to: 'cikenwa@empoweredfutures.ca'
+        send_resolved: true
+
+templates:
+  - /etc/alertmanager/*.tmpl

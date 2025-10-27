@@ -1,0 +1,24 @@
+groups:
+- name: NodeDown
+  rules:
+  - alert: InstanceDown
+    expr: up{job="kubernetes-nodes"} == 0
+    for: 2m
+    labels:
+      severity: page
+    annotations:
+      host: "{{ $labels.kubernetes_io_hostname }}"
+      summary: "Instance down"
+      description: "Node {{ $labels.kubernetes_io_hostname }} has been down for more than 2 minutes."
+
+- name: LowMemory
+  rules:
+  - alert: LowMemory
+    expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 85
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      host: "{{ $labels.kubernetes_node }}"
+      summary: "{{ $labels.kubernetes_node }} Host is low on memory. Only {{ $value }}% left"
+      description: "{{ $labels.kubernetes_node }} node is low on memory. Only {{ $value }}% left"
